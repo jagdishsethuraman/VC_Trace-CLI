@@ -1,0 +1,25 @@
+# Build artifacts
+target/
+**/target/
+*.dylib
+*.so
+*.dll
+*.exe
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.venv/
+env/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Temp outputs
+*.tmp
+*.log
+test_output/

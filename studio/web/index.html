@@ -1,0 +1,1467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vectorizer OS — Custom Python Raster-to-SVG Studio</title>
+  <style>
+    :root {
+      --bg-base: #090d16;
+      --bg-surface: #111827;
+      --bg-card: #182234;
+      --bg-card-hover: #1e293b;
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-accent: rgba(229, 169, 60, 0.4);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --accent-brass: #e5a93c;
+      --accent-brass-hover: #f59e0b;
+      --accent-cyan: #38bdf8;
+      --accent-emerald: #10b981;
+      --accent-rose: #f43f5e;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 14px;
+      --shadow-elevation: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      font-size: 13px;
+      line-height: 1.5;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      user-select: none;
+    }
+
+    /* TOP HEADER */
+    header {
+      height: 52px;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 18px;
+      z-index: 20;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-icon {
+      width: 28px;
+      height: 28px;
+      background: linear-gradient(135deg, #e5a93c 0%, #b45309 100%);
+      border-radius: var(--radius-sm);
+      display: grid;
+      place-items: center;
+      box-shadow: 0 2px 8px rgba(229, 169, 60, 0.3);
+    }
+
+    .brand-title {
+      font-weight: 700;
+      font-size: 14px;
+      letter-spacing: 0.04em;
+      color: var(--text-main);
+    }
+
+    .brand-pill {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      background: rgba(229, 169, 60, 0.15);
+      color: var(--accent-brass);
+      border: 1px solid rgba(229, 169, 60, 0.3);
+      padding: 2px 7px;
+      border-radius: 999px;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+      background: rgba(255, 255, 255, 0.03);
+      padding: 4px 10px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-subtle);
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      background: var(--accent-emerald);
+      border-radius: 50%;
+      box-shadow: 0 0 8px var(--accent-emerald);
+    }
+
+    /* WORKSPACE LAYOUT */
+    .workspace {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      height: calc(100vh - 52px);
+      overflow: hidden;
+    }
+
+    /* SIDEBAR CONTROLS */
+    aside {
+      background: var(--bg-surface);
+      border-right: 1px solid var(--border-subtle);
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    aside::-webkit-scrollbar {
+      width: 6px;
+    }
+    aside::-webkit-scrollbar-thumb {
+      background: var(--border-subtle);
+      border-radius: 3px;
+    }
+
+    .section-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    /* DROPZONE */
+    .dropzone {
+      border: 2px dashed rgba(255, 255, 255, 0.15);
+      border-radius: var(--radius-md);
+      padding: 18px 14px;
+      text-align: center;
+      background: rgba(255, 255, 255, 0.02);
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      position: relative;
+    }
+
+    .dropzone:hover, .dropzone.dragover {
+      border-color: var(--accent-brass);
+      background: rgba(229, 169, 60, 0.04);
+    }
+
+    .dropzone-icon {
+      color: var(--accent-brass);
+      margin-bottom: 6px;
+    }
+
+    .dropzone-text {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-main);
+    }
+
+    .dropzone-hint {
+      font-size: 10px;
+      color: var(--text-dim);
+      margin-top: 2px;
+    }
+
+    #fileInput {
+      display: none;
+    }
+
+    /* PRESETS */
+    .presets-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .preset-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.15s ease;
+    }
+
+    .preset-card:hover {
+      border-color: var(--border-accent);
+      background: var(--bg-card-hover);
+      transform: translateY(-1px);
+    }
+
+    .preset-card:active {
+      transform: scale(0.97);
+    }
+
+    .preset-thumb {
+      width: 30px;
+      height: 30px;
+      border-radius: 4px;
+      background: #000;
+      object-fit: cover;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .preset-info {
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .preset-name {
+      font-size: 11px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--text-main);
+    }
+
+    .preset-tag {
+      font-size: 9px;
+      color: var(--text-dim);
+    }
+
+    /* SEGMENTED BUTTONS */
+    .segmented {
+      display: flex;
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 2px;
+      gap: 2px;
+    }
+
+    .segment-btn {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 600;
+      padding: 6px 4px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-align: center;
+    }
+
+    .segment-btn:hover {
+      color: var(--text-main);
+    }
+
+    .segment-btn.active {
+      background: var(--bg-card);
+      color: var(--accent-brass);
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+    }
+
+    /* SLIDERS & CONTROLS */
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .control-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .control-label-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .control-label {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-muted);
+    }
+
+    .control-val {
+      font-size: 11px;
+      font-family: var(--font-mono);
+      font-weight: 600;
+      color: var(--accent-cyan);
+      background: rgba(56, 189, 248, 0.1);
+      padding: 1px 6px;
+      border-radius: 4px;
+      min-width: 36px;
+      text-align: right;
+    }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 2px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--accent-brass);
+      cursor: pointer;
+      box-shadow: 0 0 6px rgba(229, 169, 60, 0.5);
+      transition: transform 0.1s ease;
+    }
+
+    input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+    }
+
+    /* ACTION BUTTONS */
+    .btn-primary {
+      background: linear-gradient(135deg, #e5a93c 0%, #d97706 100%);
+      color: #090d16;
+      border: none;
+      padding: 10px 14px;
+      border-radius: var(--radius-sm);
+      font-weight: 700;
+      font-size: 12px;
+      letter-spacing: 0.03em;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      box-shadow: 0 4px 12px rgba(229, 169, 60, 0.3);
+      transition: all 0.15s ease;
+    }
+
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #fbbf24 0%, #e5a93c 100%);
+      box-shadow: 0 6px 16px rgba(229, 169, 60, 0.4);
+    }
+
+    .btn-primary:active {
+      transform: scale(0.97);
+    }
+
+    .btn-secondary {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+      padding: 8px 12px;
+      border-radius: var(--radius-sm);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-secondary:hover {
+      background: var(--bg-card-hover);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .btn-secondary:active {
+      transform: scale(0.97);
+    }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 0;
+      cursor: pointer;
+    }
+
+    .toggle-row input {
+      accent-color: var(--accent-brass);
+    }
+
+    /* TELEMETRY CARD */
+    .telemetry-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 12px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .telemetry-item {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .telemetry-key {
+      font-size: 9px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .telemetry-val {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    /* MAIN STAGE / VIEWPORT */
+    main {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      background: #060910;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* VIEWPORT TOOLBAR */
+    .viewport-bar {
+      height: 44px;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      z-index: 10;
+    }
+
+    .view-modes {
+      display: flex;
+      gap: 6px;
+    }
+
+    .view-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+
+    .view-btn:hover {
+      color: var(--text-main);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .view-btn.active {
+      color: var(--accent-brass);
+      background: rgba(229, 169, 60, 0.1);
+      border-color: rgba(229, 169, 60, 0.25);
+    }
+
+    .stage-tools {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* VIEWPORT CANVAS CONTAINER */
+    .viewport-canvas {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      display: grid;
+      place-items: center;
+      background-image:
+        linear-gradient(45deg, #0e1422 25%, transparent 25%),
+        linear-gradient(-45deg, #0e1422 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #0e1422 75%),
+        linear-gradient(-45deg, transparent 75%, #0e1422 75%);
+      background-size: 20px 20px;
+      background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+    }
+
+    /* 1. SIDE BY SIDE VIEW */
+    .side-by-side-wrap {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      width: 90%;
+      height: 90%;
+      gap: 16px;
+    }
+
+    .pane-box {
+      background: rgba(17, 24, 39, 0.7);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      backdrop-filter: blur(8px);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .pane-header {
+      height: 32px;
+      background: rgba(0, 0, 0, 0.4);
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-dim);
+    }
+
+    .pane-content {
+      flex: 1;
+      display: grid;
+      place-items: center;
+      padding: 16px;
+      overflow: auto;
+    }
+
+    .pane-content img, .pane-content svg {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      image-rendering: pixelated;
+      filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.4));
+    }
+
+    /* 2. SPLIT CURTAIN SLIDER VIEW */
+    .split-curtain-wrap {
+      position: relative;
+      width: 500px;
+      height: 500px;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      background: rgba(17, 24, 39, 0.8);
+      box-shadow: var(--shadow-elevation);
+    }
+
+    .curtain-layer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: grid;
+      place-items: center;
+      pointer-events: none;
+    }
+
+    .curtain-layer img, .curtain-layer svg {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .curtain-vector {
+      clip-path: polygon(0 0, 50% 0, 50% 100%, 0 100%);
+    }
+
+    .curtain-divider {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 50%;
+      width: 3px;
+      background: var(--accent-brass);
+      cursor: ew-resize;
+      z-index: 10;
+      transform: translateX(-50%);
+    }
+
+    .curtain-handle {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 24px;
+      height: 24px;
+      background: var(--accent-brass);
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+      color: #000;
+      font-size: 10px;
+      font-weight: 900;
+    }
+
+    .curtain-badge {
+      position: absolute;
+      bottom: 12px;
+      padding: 3px 8px;
+      background: rgba(0, 0, 0, 0.6);
+      border-radius: 4px;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      pointer-events: none;
+    }
+    .badge-raster { right: 12px; color: var(--accent-cyan); }
+    .badge-vector { left: 12px; color: var(--accent-brass); }
+
+    /* 3. CODE INSPECTOR */
+    .code-inspector-wrap {
+      width: 90%;
+      height: 90%;
+      background: #0d1117;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .code-header {
+      height: 36px;
+      background: #161b22;
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 14px;
+    }
+
+    .code-title {
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+    }
+
+    .code-content {
+      flex: 1;
+      padding: 14px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: #7ee787;
+      overflow: auto;
+      white-space: pre;
+      line-height: 1.4;
+      user-select: text;
+    }
+
+    /* LOADING SPINNER */
+    .spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(0, 0, 0, 0.2);
+      border-top-color: #000;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      display: none;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .loading .spinner { display: inline-block; }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header>
+    <div class="brand">
+      <div class="brand-icon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#090d16" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+          <polyline points="2 17 12 22 22 17"></polyline>
+          <polyline points="2 12 12 17 22 12"></polyline>
+        </svg>
+      </div>
+      <div class="brand-title">VECTORIZER OS</div>
+      <div class="brand-pill">Python Native</div>
+    </div>
+
+    <div class="header-actions">
+      <div class="status-badge">
+        <div class="status-dot"></div>
+        <span id="engineStatus">Dual-Engine Active</span>
+      </div>
+      <button class="btn-secondary" id="btnCopySvg">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+        </svg>
+        Copy SVG
+      </button>
+      <button class="btn-secondary" id="btnDownloadVStitcher" style="border-color: rgba(56, 189, 248, 0.4); color: var(--accent-cyan);">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
+        </svg>
+        VStitcher Export
+      </button>
+      <button class="btn-primary" id="btnDownloadSvg">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#090d16" stroke-width="2.5">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+        Download SVG
+      </button>
+    </div>
+  </header>
+
+  <!-- WORKSPACE -->
+  <div class="workspace">
+
+    <!-- ASIDE CONTROLS -->
+    <aside>
+      <!-- DROPZONE -->
+      <div>
+        <div class="section-title">Source Image</div>
+        <div class="dropzone" id="dropzone">
+          <div class="dropzone-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+              <circle cx="8.5" cy="8.5" r="1.5"></circle>
+              <polyline points="21 15 16 10 5 21"></polyline>
+            </svg>
+          </div>
+          <div class="dropzone-text">Drop image here or click to browse</div>
+          <div class="dropzone-hint">PNG, JPG, BMP, WebP • Paste via ⌘V</div>
+          <input type="file" id="fileInput" accept="image/*">
+        </div>
+      </div>
+
+      <!-- PRESETS -->
+      <div>
+        <div class="section-title">Instant Presets</div>
+        <div class="presets-grid" id="presetsList">
+          <!-- Populated dynamically via /api/presets -->
+        </div>
+      </div>
+
+      <!-- ENGINE SELECTOR -->
+      <div>
+        <div class="section-title">
+          <span>Vector Engine</span>
+          <span class="brand-pill" id="enginePill">⚡ Rust Native</span>
+        </div>
+        <div class="segmented" id="engineSelector">
+          <button class="segment-btn active" data-engine="vectorcraft">⚡ VectorCraft</button>
+          <button class="segment-btn" data-engine="python">🐍 Python</button>
+          <button class="segment-btn" data-engine="compare">⚖️ Compare</button>
+        </div>
+      </div>
+
+      <!-- VECTORCRAFT CONTROLS -->
+      <div id="vectorcraftGroup">
+        <div class="section-title">
+          <span>VectorCraft Presets</span>
+          <span style="font-size: 9px; color: var(--accent-brass); text-transform: none;">Potrace Clean-Room</span>
+        </div>
+        <div class="segmented" id="vcPresetSelector" style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
+          <button class="segment-btn active" data-vcpreset="Flat Logo">🎯 Flat Logo</button>
+          <button class="segment-btn" data-vcpreset="6 Colors">🎨 6 Colors</button>
+          <button class="segment-btn" data-vcpreset="16 Colors">🌈 16 Colors</button>
+          <button class="segment-btn" data-vcpreset="Black and White Logo">⚪ Monochrome</button>
+          <button class="segment-btn" data-vcpreset="Line Art">🖊️ Line Art</button>
+          <button class="segment-btn" data-vcpreset="Silhouettes">👤 Silhouettes</button>
+        </div>
+
+        <div class="control-group" style="margin-top: 12px;">
+          <label class="toggle-row">
+            <span class="control-label">Ignore White (Transparent Cutout)</span>
+            <input type="checkbox" id="chkIgnoreWhite" checked>
+          </label>
+          <label class="toggle-row">
+            <span class="control-label">Overlap Layers (Anti-Gap Print Seams)</span>
+            <input type="checkbox" id="chkOverlapping" checked>
+          </label>
+          <label class="toggle-row">
+            <span class="control-label">Snap Live Shapes (Circles / Rects)</span>
+            <input type="checkbox" id="chkShapes" checked>
+          </label>
+          <label class="toggle-row">
+            <span class="control-label">Snap Curves to Lines</span>
+            <input type="checkbox" id="chkSnapCurves" checked>
+          </label>
+          <label class="toggle-row">
+            <span class="control-label">Centerline Strokes (Single Ink Path)</span>
+            <input type="checkbox" id="chkStrokes">
+          </label>
+        </div>
+      </div>
+
+      <!-- PYTHON GROUP (Toggled by Engine) -->
+      <div id="pythonGroup" style="display: none; flex-direction: column; gap: 14px;">
+        <!-- MODE SELECTOR -->
+        <div>
+          <div class="section-title">Vectorization Mode</div>
+          <div class="segmented" id="modeSelector">
+            <button class="segment-btn active" data-mode="color">Color</button>
+            <button class="segment-btn" data-mode="bw">Silhouette (BW)</button>
+            <button class="segment-btn" data-mode="outline">Outlines</button>
+          </div>
+        </div>
+
+        <!-- EDGE STYLE SELECTOR (ANTI-WAVY) -->
+        <div>
+          <div class="section-title">
+            <span>Edge Style</span>
+            <span style="font-size: 9px; color: var(--accent-brass); text-transform: none;">Zero Wavy Ripples</span>
+          </div>
+          <div class="segmented" id="curveSelector">
+            <button class="segment-btn active" data-curve="adaptive">Adaptive</button>
+            <button class="segment-btn" data-curve="crisp">Crisp Lines</button>
+            <button class="segment-btn" data-curve="smooth">Smooth Arcs</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- PARAMETERS -->
+      <div class="control-group">
+        <div class="section-title">Mathematical Tuning</div>
+
+        <!-- Colors -->
+        <div class="control-item" id="itemColors">
+          <div class="control-label-row">
+            <span class="control-label">Quantized Colors</span>
+            <span class="control-val" id="valColors">8</span>
+          </div>
+          <input type="range" id="sliderColors" min="2" max="24" value="8" step="1">
+        </div>
+
+        <!-- Simplification RDP -->
+        <div class="control-item">
+          <div class="control-label-row">
+            <span class="control-label">RDP Simplification (ε)</span>
+            <span class="control-val" id="valSimplify">1.0</span>
+          </div>
+          <input type="range" id="sliderSimplify" min="0" max="4.0" value="1.0" step="0.1">
+        </div>
+
+        <!-- Smoothness -->
+        <div class="control-item">
+          <div class="control-label-row">
+            <span class="control-label">Bézier Smoothness</span>
+            <span class="control-val" id="valSmooth">0.5</span>
+          </div>
+          <input type="range" id="sliderSmooth" min="0" max="1.0" value="0.5" step="0.05">
+        </div>
+
+        <!-- Min Area -->
+        <div class="control-item">
+          <div class="control-label-row">
+            <span class="control-label">Min Area Filter (px)</span>
+            <span class="control-val" id="valMinArea">10</span>
+          </div>
+          <input type="range" id="sliderMinArea" min="0" max="60" value="10" step="2">
+        </div>
+
+        <!-- Corner Threshold -->
+        <div class="control-item">
+          <div class="control-label-row">
+            <span class="control-label">Sharp Corner Angle</span>
+            <span class="control-val" id="valCorner">60°</span>
+          </div>
+          <input type="range" id="sliderCorner" min="30" max="120" value="60" step="5">
+        </div>
+
+        <!-- Downsampling Max Dimension -->
+        <div class="control-item">
+          <div class="control-label-row">
+            <span class="control-label">Pre-Scaling Limit</span>
+            <span class="control-val" id="valMaxSize">800px</span>
+          </div>
+          <input type="range" id="sliderMaxSize" min="256" max="1200" value="800" step="64">
+        </div>
+
+        <label class="toggle-row">
+          <span class="control-label">Auto-recompute on slider change</span>
+          <input type="checkbox" id="chkLiveUpdate" checked>
+        </label>
+      </div>
+
+      <!-- RUN BUTTON -->
+      <button class="btn-primary" id="btnExecute">
+        <div class="spinner"></div>
+        <span>⚡ Re-Vectorize</span>
+      </button>
+
+      <!-- TELEMETRY -->
+      <div>
+        <div class="section-title">Telemetry</div>
+        <div class="telemetry-card">
+          <div class="telemetry-item">
+            <span class="telemetry-key">Latency</span>
+            <span class="telemetry-val" id="statLatency">—</span>
+          </div>
+          <div class="telemetry-item">
+            <span class="telemetry-key">SVG Size</span>
+            <span class="telemetry-val" id="statSvgSize">—</span>
+          </div>
+          <div class="telemetry-item">
+            <span class="telemetry-key">Paths</span>
+            <span class="telemetry-val" id="statPaths">—</span>
+          </div>
+          <div class="telemetry-item">
+            <span class="telemetry-key">Segments</span>
+            <span class="telemetry-val" id="statSegments">—</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- MAIN VIEWPORT -->
+    <main>
+      <!-- TOOLBAR -->
+      <div class="viewport-bar">
+        <div class="view-modes">
+          <button class="view-btn active" data-view="sidebyside">Side-by-Side</button>
+          <button class="view-btn" data-view="curtain">Curtain Split</button>
+          <button class="view-btn" data-view="code">Raw SVG XML</button>
+        </div>
+
+        <div class="stage-tools">
+          <button class="btn-secondary" id="btnResetZoom">Fit</button>
+        </div>
+      </div>
+
+      <!-- COMPARE BENCHMARK BANNER -->
+      <div id="compareBanner" style="display: none; background: rgba(229, 169, 60, 0.08); border-bottom: 1px solid rgba(229, 169, 60, 0.25); padding: 8px 18px; font-size: 11px; display: flex; align-items: center; justify-content: space-between;">
+        <div style="display: flex; gap: 14px; align-items: center;">
+          <span style="color: var(--accent-brass); font-weight: 700;">⚖️ Dual-Engine Benchmark:</span>
+          <span id="cmpSpeedup" style="color: var(--accent-emerald); font-weight: 600;">—</span>
+          <span id="cmpAnchors" style="color: var(--accent-cyan); font-weight: 600;">—</span>
+          <span id="cmpStats" style="color: var(--text-dim); font-family: var(--font-mono); font-size: 10px;">—</span>
+        </div>
+        <div class="segmented" id="compareViewToggle" style="width: 250px;">
+          <button class="segment-btn active" data-cmpview="vectorcraft">⚡ VectorCraft</button>
+          <button class="segment-btn" data-cmpview="python">🐍 Python</button>
+        </div>
+      </div>
+
+      <!-- VIEWPORT STAGE -->
+      <div class="viewport-canvas" id="viewportCanvas">
+
+        <!-- 1. SIDE BY SIDE -->
+        <div class="side-by-side-wrap" id="viewSideBySide">
+          <div class="pane-box">
+            <div class="pane-header">
+              <span>Original Raster</span>
+              <span id="rasterDimensions">—</span>
+            </div>
+            <div class="pane-content">
+              <img id="rasterPreview" src="" alt="Raster preview">
+            </div>
+          </div>
+
+          <div class="pane-box">
+            <div class="pane-header">
+              <span>Vectorized SVG</span>
+              <span id="vectorDimensions">—</span>
+            </div>
+            <div class="pane-content" id="vectorPreviewPane">
+              <!-- SVG inserted here -->
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. SPLIT CURTAIN SLIDER -->
+        <div class="split-curtain-wrap" id="viewCurtain" style="display: none;">
+          <div class="curtain-layer">
+            <img id="curtainRaster" src="" alt="Curtain raster">
+          </div>
+          <div class="curtain-layer curtain-vector" id="curtainVectorLayer">
+            <!-- Vector clone placed here -->
+          </div>
+          <div class="curtain-divider" id="curtainDivider">
+            <div class="curtain-handle">↔</div>
+          </div>
+          <div class="curtain-badge badge-vector">SVG Vector</div>
+          <div class="curtain-badge badge-raster">Raster</div>
+        </div>
+
+        <!-- 3. CODE INSPECTOR -->
+        <div class="code-inspector-wrap" id="viewCode" style="display: none;">
+          <div class="code-header">
+            <span class="code-title">SVG DOM Structure</span>
+            <button class="btn-secondary" id="btnCopyFromCode">Copy Code</button>
+          </div>
+          <div class="code-content" id="codeContent">Loading vectorizer output...</div>
+        </div>
+
+      </div>
+    </main>
+
+  </div>
+
+  <script>
+    // State management
+    const state = {
+      image: null,
+      engine: 'vectorcraft',
+      vcPreset: 'Flat Logo',
+      ignoreWhite: true,
+      overlapping: true,
+      shapes: true,
+      snapCurves: true,
+      strokes: false,
+      mode: 'color',
+      curveMode: 'adaptive',
+      colors: 8,
+      simplify: 1.5,
+      smooth: 0.5,
+      minArea: 10,
+      cornerThresh: 55,
+      maxSize: 800,
+      activeView: 'sidebyside',
+      svgData: '',
+      vcSvgData: '',
+      pySvgData: '',
+      isVectorizing: false,
+    };
+
+    // DOM Elements
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('fileInput');
+    const presetsList = document.getElementById('presetsList');
+    const rasterPreview = document.getElementById('rasterPreview');
+    const vectorPreviewPane = document.getElementById('vectorPreviewPane');
+    const curtainRaster = document.getElementById('curtainRaster');
+    const curtainVectorLayer = document.getElementById('curtainVectorLayer');
+    const curtainDivider = document.getElementById('curtainDivider');
+    const codeContent = document.getElementById('codeContent');
+    const btnExecute = document.getElementById('btnExecute');
+    const btnDownloadSvg = document.getElementById('btnDownloadSvg');
+    const btnDownloadVStitcher = document.getElementById('btnDownloadVStitcher');
+    const btnCopySvg = document.getElementById('btnCopySvg');
+
+    // Engine & Compare
+    const enginePill = document.getElementById('enginePill');
+    const vectorcraftGroup = document.getElementById('vectorcraftGroup');
+    const pythonGroup = document.getElementById('pythonGroup');
+    const compareBanner = document.getElementById('compareBanner');
+    const cmpSpeedup = document.getElementById('cmpSpeedup');
+    const cmpAnchors = document.getElementById('cmpAnchors');
+    const cmpStats = document.getElementById('cmpStats');
+
+    // VectorCraft Checkboxes
+    const chkIgnoreWhite = document.getElementById('chkIgnoreWhite');
+    const chkOverlapping = document.getElementById('chkOverlapping');
+    const chkShapes = document.getElementById('chkShapes');
+    const chkSnapCurves = document.getElementById('chkSnapCurves');
+    const chkStrokes = document.getElementById('chkStrokes');
+
+    // Telemetry
+    const statLatency = document.getElementById('statLatency');
+    const statSvgSize = document.getElementById('statSvgSize');
+    const statPaths = document.getElementById('statPaths');
+    const statSegments = document.getElementById('statSegments');
+    const rasterDimensions = document.getElementById('rasterDimensions');
+    const vectorDimensions = document.getElementById('vectorDimensions');
+
+    // Controls
+    const sliderColors = document.getElementById('sliderColors');
+    const sliderSimplify = document.getElementById('sliderSimplify');
+    const sliderSmooth = document.getElementById('sliderSmooth');
+    const sliderMinArea = document.getElementById('sliderMinArea');
+    const sliderCorner = document.getElementById('sliderCorner');
+    const sliderMaxSize = document.getElementById('sliderMaxSize');
+    const chkLiveUpdate = document.getElementById('chkLiveUpdate');
+
+    // Engine Selector
+    document.querySelectorAll('#engineSelector button').forEach(btn => {
+      btn.onclick = () => {
+        document.querySelectorAll('#engineSelector button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        state.engine = btn.dataset.engine;
+
+        if (state.engine === 'vectorcraft') {
+          vectorcraftGroup.style.display = 'block';
+          pythonGroup.style.display = 'none';
+          compareBanner.style.display = 'none';
+          enginePill.textContent = '⚡ Rust Native';
+        } else if (state.engine === 'python') {
+          vectorcraftGroup.style.display = 'none';
+          pythonGroup.style.display = 'flex';
+          compareBanner.style.display = 'none';
+          enginePill.textContent = '🐍 Python';
+        } else if (state.engine === 'compare') {
+          vectorcraftGroup.style.display = 'block';
+          pythonGroup.style.display = 'flex';
+          compareBanner.style.display = 'flex';
+          enginePill.textContent = '⚖️ Dual Engine';
+        }
+        executeVectorization();
+      };
+    });
+
+    // VectorCraft Presets
+    document.querySelectorAll('#vcPresetSelector button').forEach(btn => {
+      btn.onclick = () => {
+        document.querySelectorAll('#vcPresetSelector button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        state.vcPreset = btn.dataset.vcpreset;
+        executeVectorization();
+      };
+    });
+
+    // Checkboxes
+    function bindCheckbox(chk, prop) {
+      if (!chk) return;
+      chk.onchange = () => {
+        state[prop] = chk.checked;
+        executeVectorization();
+      };
+    }
+    bindCheckbox(chkIgnoreWhite, 'ignoreWhite');
+    bindCheckbox(chkOverlapping, 'overlapping');
+    bindCheckbox(chkShapes, 'shapes');
+    bindCheckbox(chkSnapCurves, 'snapCurves');
+    bindCheckbox(chkStrokes, 'strokes');
+
+    // Compare View Toggle
+    document.querySelectorAll('#compareViewToggle button').forEach(btn => {
+      btn.onclick = () => {
+        document.querySelectorAll('#compareViewToggle button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const viewEngine = btn.dataset.cmpview;
+        const targetSvg = viewEngine === 'vectorcraft' ? state.vcSvgData : state.pySvgData;
+        if (targetSvg) {
+          state.svgData = targetSvg;
+          renderSvgData(targetSvg);
+        }
+      };
+    });
+
+    // 1. Fetch Presets
+    async function loadPresets() {
+      try {
+        const resp = await fetch('/api/presets');
+        const presets = await resp.json();
+        presetsList.innerHTML = '';
+        presets.forEach((p, idx) => {
+          const card = document.createElement('div');
+          card.className = 'preset-card';
+          card.innerHTML = `
+            <img class="preset-thumb" src="${p.image}" alt="${p.name}">
+            <div class="preset-info">
+              <div class="preset-name">${p.name}</div>
+              <div class="preset-tag">${p.mode.toUpperCase()}</div>
+            </div>
+          `;
+          card.onclick = () => {
+            selectPreset(p);
+          };
+          presetsList.appendChild(card);
+          if (idx === 0) selectPreset(p);
+        });
+      } catch (err) {
+        console.error('Failed to load presets', err);
+      }
+    }
+
+    function selectPreset(preset) {
+      state.image = preset.image;
+      state.mode = preset.mode;
+      state.colors = preset.colors;
+      state.simplify = preset.simplify;
+      state.smooth = preset.smooth;
+
+      sliderColors.value = preset.colors;
+      document.getElementById('valColors').textContent = preset.colors;
+      sliderSimplify.value = preset.simplify;
+      document.getElementById('valSimplify').textContent = preset.simplify.toFixed(1);
+      sliderSmooth.value = preset.smooth;
+      document.getElementById('valSmooth').textContent = preset.smooth.toFixed(2);
+
+      document.querySelectorAll('#modeSelector button').forEach(b => {
+        b.classList.toggle('active', b.dataset.mode === preset.mode);
+      });
+
+      rasterPreview.src = state.image;
+      curtainRaster.src = state.image;
+
+      executeVectorization();
+    }
+
+    // 2. Drag & Drop and Paste Handlers
+    dropzone.onclick = () => fileInput.click();
+    fileInput.onchange = (e) => {
+      const file = e.target.files[0];
+      if (file) handleImageFile(file);
+    };
+
+    dropzone.ondragover = (e) => {
+      e.preventDefault();
+      dropzone.classList.add('dragover');
+    };
+    dropzone.ondragleave = () => dropzone.classList.remove('dragover');
+    dropzone.ondrop = (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      const file = e.dataTransfer.files[0];
+      if (file) handleImageFile(file);
+    };
+
+    window.addEventListener('paste', (e) => {
+      const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+      for (let item of items) {
+        if (item.type.indexOf('image') !== -1) {
+          const file = item.getAsFile();
+          handleImageFile(file);
+          break;
+        }
+      }
+    });
+
+    function handleImageFile(file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        state.image = e.target.result;
+        rasterPreview.src = state.image;
+        curtainRaster.src = state.image;
+        executeVectorization();
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // 3. Slider Binding
+    function bindSlider(slider, valSpan, stateProp, formatter = v => v) {
+      slider.oninput = () => {
+        valSpan.textContent = formatter(slider.value);
+        state[stateProp] = parseFloat(slider.value);
+      };
+      slider.onchange = () => {
+        if (chkLiveUpdate.checked) executeVectorization();
+      };
+    }
+
+    bindSlider(sliderColors, document.getElementById('valColors'), 'colors', v => v);
+    bindSlider(sliderSimplify, document.getElementById('valSimplify'), 'simplify', v => parseFloat(v).toFixed(1));
+    bindSlider(sliderSmooth, document.getElementById('valSmooth'), 'smooth', v => parseFloat(v).toFixed(2));
+    bindSlider(sliderMinArea, document.getElementById('valMinArea'), 'minArea', v => v);
+    bindSlider(sliderCorner, document.getElementById('valCorner'), 'cornerThresh', v => v + '°');
+    bindSlider(sliderMaxSize, document.getElementById('valMaxSize'), 'maxSize', v => v + 'px');
+
+    // Mode Selector
+    document.querySelectorAll('#modeSelector button').forEach(btn => {
+      btn.onclick = () => {
+        document.querySelectorAll('#modeSelector button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        state.mode = btn.dataset.mode;
+        document.getElementById('itemColors').style.display = state.mode === 'bw' ? 'none' : 'flex';
+        executeVectorization();
+      };
+    });
+
+    // Edge Style Selector
+    document.querySelectorAll('#curveSelector button').forEach(btn => {
+      btn.onclick = () => {
+        document.querySelectorAll('#curveSelector button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        state.curveMode = btn.dataset.curve;
+        executeVectorization();
+      };
+    });
+
+    function renderSvgData(svg) {
+      vectorPreviewPane.innerHTML = svg;
+      curtainVectorLayer.innerHTML = svg;
+      codeContent.textContent = svg;
+    }
+
+    // 4. Vectorize API Call
+    async function executeVectorization() {
+      if (!state.image || state.isVectorizing) return;
+      state.isVectorizing = true;
+      btnExecute.classList.add('loading');
+
+      try {
+        const payload = {
+          image: state.image,
+          engine: state.engine,
+          preset: state.vcPreset,
+          ignore_white: state.ignoreWhite,
+          method: state.overlapping ? 'overlapping' : 'abutting',
+          shapes: state.shapes,
+          snap_curves: state.snapCurves,
+          strokes: state.strokes,
+          mode: state.mode,
+          curve_mode: state.curveMode,
+          colors: state.colors,
+          simplify: state.simplify,
+          smooth: state.smooth,
+          min_area: state.minArea,
+          corner_threshold: state.cornerThresh,
+          max_size: state.maxSize,
+        };
+
+        const resp = await fetch('/api/vectorize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await resp.json();
+        if (!data.success) {
+          alert('Vectorization failed: ' + data.error);
+          return;
+        }
+
+        if (data.engine === 'compare') {
+          state.vcSvgData = data.vectorcraft.svg;
+          state.pySvgData = data.python.svg;
+          state.svgData = data.vectorcraft.svg;
+
+          // Benchmark comparison display
+          const cmp = data.comparison;
+          compareBanner.style.display = 'flex';
+          cmpSpeedup.textContent = `⚡ ${cmp.speedup_ratio}x Faster (${cmp.vc_duration_ms}ms vs ${cmp.py_duration_ms}ms)`;
+          cmpAnchors.textContent = `🎯 -${cmp.anchor_reduction_pct}% Anchors (${cmp.vc_anchors} vs ${cmp.py_anchors})`;
+          cmpStats.textContent = `VC: ${(data.vectorcraft.svg_bytes/1024).toFixed(1)}KB | Py: ${(data.python.svg_bytes/1024).toFixed(1)}KB`;
+
+          document.querySelectorAll('#compareViewToggle button').forEach(b => {
+            b.classList.toggle('active', b.dataset.cmpview === 'vectorcraft');
+          });
+        } else {
+          state.svgData = data.svg;
+          compareBanner.style.display = 'none';
+        }
+
+        renderSvgData(state.svgData);
+
+        // Telemetry
+        statLatency.textContent = data.duration_ms + ' ms';
+        statSvgSize.textContent = (data.svg_bytes / 1024).toFixed(1) + ' KB';
+        statPaths.textContent = data.path_count;
+        statSegments.textContent = (data.anchor_count !== undefined ? data.anchor_count + ' anchors' : data.segment_count + ' segs');
+
+        rasterDimensions.textContent = `${data.raster_width} × ${data.raster_height}`;
+        vectorDimensions.textContent = `Paths: ${data.path_count} | Anchors: ${data.anchor_count || data.segment_count}`;
+
+      } catch (err) {
+        console.error('Vectorization request failed', err);
+      } finally {
+        state.isVectorizing = false;
+        btnExecute.classList.remove('loading');
+      }
+    }
+
+    btnExecute.onclick = executeVectorization;
+
+    // 5. Download & Copy SVG
+    btnDownloadSvg.onclick = () => {
+      if (!state.svgData) return;
+      const blob = new Blob([state.svgData], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `vectorized_${state.engine}_${Date.now()}.svg`;
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+
+    btnDownloadVStitcher.onclick = () => {
+      if (!state.svgData) return;
+      const blob = new Blob([state.svgData], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `vstitcher_artwork_${state.vcPreset.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}.svg`;
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+
+    btnCopySvg.onclick = () => {
+      if (!state.svgData) return;
+      navigator.clipboard.writeText(state.svgData).then(() => {
+        const orig = btnCopySvg.innerHTML;
+        btnCopySvg.textContent = 'Copied!';
+        setTimeout(() => btnCopySvg.innerHTML = orig, 1500);
+      });
+    };
+
+    document.getElementById('btnCopyFromCode').onclick = btnCopySvg.onclick;
+
+    // 6. View Mode Switcher
+    const viewButtons = document.querySelectorAll('.view-btn');
+    const viewSideBySide = document.getElementById('viewSideBySide');
+    const viewCurtain = document.getElementById('viewCurtain');
+    const viewCode = document.getElementById('viewCode');
+
+    viewButtons.forEach(btn => {
+      btn.onclick = () => {
+        viewButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        state.activeView = btn.dataset.view;
+
+        viewSideBySide.style.display = state.activeView === 'sidebyside' ? 'grid' : 'none';
+        viewCurtain.style.display = state.activeView === 'curtain' ? 'block' : 'none';
+        viewCode.style.display = state.activeView === 'code' ? 'flex' : 'none';
+      };
+    });
+
+    // 7. Interactive Curtain Divider Drag
+    let isDraggingCurtain = false;
+    curtainDivider.onmousedown = (e) => {
+      isDraggingCurtain = true;
+      e.preventDefault();
+    };
+
+    window.addEventListener('mouseup', () => { isDraggingCurtain = false; });
+    window.addEventListener('mousemove', (e) => {
+      if (!isDraggingCurtain) return;
+      const rect = viewCurtain.getBoundingClientRect();
+      const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+      const pct = (x / rect.width) * 100;
+      curtainDivider.style.left = pct + '%';
+      curtainVectorLayer.style.clipPath = `polygon(0 0, ${pct}% 0, ${pct}% 100%, 0 100%)`;
+    });
+
+    // Initialize
+    loadPresets();
+  </script>
+</body>
+</html>
