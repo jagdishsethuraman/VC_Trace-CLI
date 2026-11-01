@@ -85,14 +85,23 @@ Benchmarked on a 64×64 circular insignia (1000px scale equivalent):
 
 ## 🚀 Quickstart
 
-### 1. Build the Rust CLI Executable
+### 1. Build the Ultra-Lightweight Standalone Binary (`vc-trace-mini` ~2.4MB)
 
+For lightweight plugin bundles (e.g., Browzwear VStitcher plugin), build the isolated `vc-trace-mini` binary:
 ```bash
 cd vectorcraft
+cargo build --release -p vc-trace-mini
+```
+The stripped standalone binary is only **~2.4 MB** (down from 59 MB of the full desktop engine CLI, a **96% size reduction**):
+```bash
+# Direct single-step usage
+./vectorcraft/target/release/vc-trace-mini -i artwork.png -o artwork.svg -p "Flat Logo" --json
+```
+
+Or build the full desktop suite CLI:
+```bash
 cargo build --release -p vectorcraft-cli
 ```
-The optimized binary will be created at:
-`vectorcraft/target/release/vectorcraft-cli`
 
 ---
 

@@ -29,19 +29,37 @@ if CURRENT_DIR not in sys.path:
 
 from vectorizer import ImageVectorizer, load_image
 
-VECTORCRAFT_CLI = os.path.abspath(os.path.join(CURRENT_DIR, "..", "vectorcraft", "target", "release", "vectorcraft-cli"))
-if not os.path.isfile(VECTORCRAFT_CLI):
-    _local_fallback = os.path.expanduser("~/Documents/Developer/vectorcraft/target/release/vectorcraft-cli")
-    if os.path.isfile(_local_fallback):
-        VECTORCRAFT_CLI = _local_fallback
+def get_vectorcraft_bin():
+    """Find best available VectorCraft binary: vc-trace-mini (2.4MB) or vectorcraft-cli (59MB)."""
+    mini_candidates = [
+        os.path.abspath(os.path.join(CURRENT_DIR, "..", "bin", "vc-trace-mini")),
+        os.path.abspath(os.path.join(CURRENT_DIR, "bin", "vc-trace-mini")),
+        os.path.abspath(os.path.join(CURRENT_DIR, "..", "vectorcraft", "target", "release", "vc-trace-mini")),
+        os.path.expanduser("~/Documents/Developer/vectorcraft/target/release/vc-trace-mini"),
+    ]
+    for c in mini_candidates:
+        if os.path.isfile(c) and os.access(c, os.X_OK):
+            return c, True
+
+    full_candidates = [
+        os.path.abspath(os.path.join(CURRENT_DIR, "..", "vectorcraft", "target", "release", "vectorcraft-cli")),
+        os.path.abspath(os.path.join(CURRENT_DIR, "..", "bin", "vectorcraft-cli")),
+        os.path.expanduser("~/Documents/Developer/vectorcraft/target/release/vectorcraft-cli"),
+    ]
+    for c in full_candidates:
+        if os.path.isfile(c) and os.access(c, os.X_OK):
+            return c, False
+
+    return None, False
 
 
 def run_vectorcraft(image_bytes, preset="Flat Logo", colors=8, ignore_white=True,
                     method="overlapping", shapes=True, snap_curves=True,
                     strokes=False, stroke_width=10, noise=10):
     """Execute VectorCraft native Rust vectorizer via headless CLI."""
-    if not os.path.isfile(VECTORCRAFT_CLI):
-        raise FileNotFoundError(f"VectorCraft CLI binary not found at {VECTORCRAFT_CLI}. Run 'cargo build --release -p vectorcraft-cli' first.")
+    bin_path, is_mini = get_vectorcraft_bin()
+    if not bin_path:
+        raise FileNotFoundError("VectorCraft binary not found. Build with 'cargo build --release -p vc-trace-mini'.")
 
     # Map common aliases to built-in VectorCraft preset names
     preset_map = {
@@ -59,44 +77,75 @@ def run_vectorcraft(image_bytes, preset="Flat Logo", colors=8, ignore_white=True
 
     out_path = in_path + ".svg"
     try:
-        params_dict = {
-            "preset": preset,
-            "params": {
-                "ignoreWhite": bool(ignore_white),
-                "method": method if method in ("overlapping", "abutting") else "overlapping",
-                "shapes": bool(shapes),
-                "snapCurvesToLines": bool(snap_curves),
-            }
-        }
-        if preset in ("3 Colors", "6 Colors", "16 Colors", "Color", "Auto Color"):
-            params_dict["params"]["colors"] = int(colors)
-        if noise is not None:
-            params_dict["params"]["noise"] = int(noise)
-        if strokes:
-            params_dict["params"]["strokes"] = True
-            params_dict["params"]["strokeWidth"] = float(stroke_width)
-
-        cmd = [
-            VECTORCRAFT_CLI, "run",
-            "--in", in_path,
-            "--cmd", "select.all",
-            "--cmd", "imageTrace.makeAndExpand",
-            "--params", json.dumps(params_dict),
-            "--export", out_path
-        ]
-        proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
-
         anchors = 0
         paths = 0
-        for line in proc.stdout.splitlines():
+
+        if is_mini:
+            cmd = [
+                bin_path,
+                "-i", in_path,
+                "-o", out_path,
+                "-p", preset,
+                "--colors", str(int(colors)),
+                "--noise", str(int(noise if noise is not None else 10)),
+                "--overlapping" if method == "overlapping" else "--abutting",
+                "--json"
+            ]
+            if ignore_white:
+                cmd.append("--ignore-white")
+            else:
+                cmd.append("--no-ignore-white")
+            if shapes:
+                cmd.append("--shapes")
+            if snap_curves:
+                cmd.append("--snap")
+            if strokes:
+                cmd.extend(["--strokes", "--stroke-width", str(float(stroke_width))])
+
+            proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
             try:
-                data = json.loads(line)
-                if data.get("step") == "cmd" and data.get("command") == "imageTrace.makeAndExpand":
-                    res = data.get("result", {})
-                    anchors = res.get("anchors", 0)
-                    paths = res.get("paths", 0)
+                meta = json.loads(proc.stdout)
+                anchors = meta.get("anchorCount", 0)
+                paths = meta.get("pathCount", 0)
             except Exception:
                 pass
+        else:
+            params_dict = {
+                "preset": preset,
+                "params": {
+                    "ignoreWhite": bool(ignore_white),
+                    "method": method if method in ("overlapping", "abutting") else "overlapping",
+                    "shapes": bool(shapes),
+                    "snapCurvesToLines": bool(snap_curves),
+                }
+            }
+            if preset in ("3 Colors", "6 Colors", "16 Colors", "Color", "Auto Color"):
+                params_dict["params"]["colors"] = int(colors)
+            if noise is not None:
+                params_dict["params"]["noise"] = int(noise)
+            if strokes:
+                params_dict["params"]["strokes"] = True
+                params_dict["params"]["strokeWidth"] = float(stroke_width)
+
+            cmd = [
+                bin_path, "run",
+                "--in", in_path,
+                "--cmd", "select.all",
+                "--cmd", "imageTrace.makeAndExpand",
+                "--params", json.dumps(params_dict),
+                "--export", out_path
+            ]
+            proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
+
+            for line in proc.stdout.splitlines():
+                try:
+                    data = json.loads(line)
+                    if data.get("step") == "cmd" and data.get("command") == "imageTrace.makeAndExpand":
+                        res = data.get("result", {})
+                        anchors = res.get("anchors", 0)
+                        paths = res.get("paths", 0)
+                except Exception:
+                    pass
 
         with open(out_path, "r", encoding="utf-8") as f:
             svg_content = f.read()

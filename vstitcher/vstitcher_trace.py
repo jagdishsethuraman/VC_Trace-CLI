@@ -22,32 +22,41 @@ from pathlib import Path
 
 
 def find_vectorcraft_cli():
-    """Locate the vectorcraft-cli binary across local search paths."""
-    candidates = [
-        # Relative to this script in VC_Trace-CLI repo
-        Path(__file__).resolve().parent.parent / "vectorcraft" / "target" / "release" / "vectorcraft-cli",
-        Path(__file__).resolve().parent.parent / "vectorcraft" / "target" / "release" / "vectorcraft-cli.exe",
-        # Local workspace build path
-        Path.home() / "Documents" / "Developer" / "vectorcraft" / "target" / "release" / "vectorcraft-cli",
-        Path.home() / "Documents" / "Developer" / "vectorcraft" / "target" / "release" / "vectorcraft-cli.exe",
-        # Local bin folder in plugin bundle
-        Path(__file__).resolve().parent / "bin" / "vectorcraft-cli",
-        Path(__file__).resolve().parent / "bin" / "vectorcraft-cli.exe",
+    """Locate the vectorizer CLI binary (prioritizing 2.4MB vc-trace-mini, falling back to vectorcraft-cli)."""
+    # 1. First priority: Lightweight 2.4MB vc-trace-mini
+    mini_candidates = [
+        Path(__file__).resolve().parent / "bin" / "vc-trace-mini",
+        Path(__file__).resolve().parent.parent / "bin" / "vc-trace-mini",
+        Path(__file__).resolve().parent.parent / "vectorcraft" / "target" / "release" / "vc-trace-mini",
+        Path.home() / "Documents" / "Developer" / "vectorcraft" / "target" / "release" / "vc-trace-mini",
     ]
+    for c in mini_candidates:
+        if c.is_file() and os.access(c, os.X_OK):
+            return str(c), True
 
-    for candidate in candidates:
-        if candidate.is_file() and os.access(candidate, os.X_OK):
-            return str(candidate)
-
-    # Fallback to system PATH
     import shutil
-    sys_path = shutil.which("vectorcraft-cli")
-    if sys_path:
-        return sys_path
+    sys_mini = shutil.which("vc-trace-mini")
+    if sys_mini:
+        return sys_mini, True
+
+    # 2. Fallback: Full 59MB vectorcraft-cli
+    full_candidates = [
+        Path(__file__).resolve().parent / "bin" / "vectorcraft-cli",
+        Path(__file__).resolve().parent.parent / "bin" / "vectorcraft-cli",
+        Path(__file__).resolve().parent.parent / "vectorcraft" / "target" / "release" / "vectorcraft-cli",
+        Path.home() / "Documents" / "Developer" / "vectorcraft" / "target" / "release" / "vectorcraft-cli",
+    ]
+    for c in full_candidates:
+        if c.is_file() and os.access(c, os.X_OK):
+            return str(c), False
+
+    sys_full = shutil.which("vectorcraft-cli")
+    if sys_full:
+        return sys_full, False
 
     raise FileNotFoundError(
-        "vectorcraft-cli binary not found. Please build it first: "
-        "'cd vectorcraft && cargo build --release -p vectorcraft-cli'"
+        "No vectorizer binary found (checked vc-trace-mini and vectorcraft-cli). "
+        "Build with 'cargo build --release -p vc-trace-mini'."
     )
 
 
@@ -85,7 +94,7 @@ def trace_for_vstitcher(
     Returns:
         dict: Execution telemetry (paths, anchors, duration_ms, output_path)
     """
-    cli_path = find_vectorcraft_cli()
+    cli_path, is_mini = find_vectorcraft_cli()
     in_file = Path(input_path).resolve()
     if not in_file.is_file():
         raise FileNotFoundError(f"Input file not found: {in_file}")
@@ -94,47 +103,77 @@ def trace_for_vstitcher(
         output_path = str(in_file.parent / f"{in_file.stem}_vstitcher.svg")
     out_file = Path(output_path).resolve()
 
-    params_dict = {
-        "preset": preset,
-        "params": {
-            "ignoreWhite": bool(ignore_white),
-            "method": "overlapping" if overlapping else "abutting",
-            "shapes": bool(shapes),
-            "snapCurvesToLines": bool(snap_curves),
-            "noise": int(noise),
-        }
-    }
-    if preset in ("3 Colors", "6 Colors", "16 Colors", "Color", "Auto Color"):
-        params_dict["params"]["colors"] = int(colors)
-    if strokes:
-        params_dict["params"]["strokes"] = True
-        params_dict["params"]["strokeWidth"] = float(stroke_width)
-
-    cmd = [
-        cli_path, "run",
-        "--in", str(in_file),
-        "--cmd", "select.all",
-        "--cmd", "imageTrace.makeAndExpand",
-        "--params", json.dumps(params_dict),
-        "--export", str(out_file)
-    ]
-
     import time
     t0 = time.perf_counter()
-    proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    elapsed_ms = (time.perf_counter() - t0) * 1000.0
-
     anchors = 0
     paths = 0
-    for line in proc.stdout.splitlines():
+
+    if is_mini:
+        cmd = [
+            cli_path,
+            "-i", str(in_file),
+            "-o", str(out_file),
+            "-p", preset,
+            "--colors", str(int(colors)),
+            "--noise", str(int(noise)),
+            "--overlapping" if overlapping else "--abutting",
+            "--json"
+        ]
+        if ignore_white:
+            cmd.append("--ignore-white")
+        else:
+            cmd.append("--no-ignore-white")
+        if shapes:
+            cmd.append("--shapes")
+        if snap_curves:
+            cmd.append("--snap")
+        if strokes:
+            cmd.extend(["--strokes", "--stroke-width", str(float(stroke_width))])
+
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
         try:
-            data = json.loads(line)
-            if data.get("step") == "cmd" and data.get("command") == "imageTrace.makeAndExpand":
-                res = data.get("result", {})
-                anchors = res.get("anchors", 0)
-                paths = res.get("paths", 0)
+            meta = json.loads(proc.stdout)
+            anchors = meta.get("anchorCount", 0)
+            paths = meta.get("pathCount", 0)
         except Exception:
             pass
+    else:
+        params_dict = {
+            "preset": preset,
+            "params": {
+                "ignoreWhite": bool(ignore_white),
+                "method": "overlapping" if overlapping else "abutting",
+                "shapes": bool(shapes),
+                "snapCurvesToLines": bool(snap_curves),
+                "noise": int(noise),
+            }
+        }
+        if preset in ("3 Colors", "6 Colors", "16 Colors", "Color", "Auto Color"):
+            params_dict["params"]["colors"] = int(colors)
+        if strokes:
+            params_dict["params"]["strokes"] = True
+            params_dict["params"]["strokeWidth"] = float(stroke_width)
+
+        cmd = [
+            cli_path, "run",
+            "--in", str(in_file),
+            "--cmd", "select.all",
+            "--cmd", "imageTrace.makeAndExpand",
+            "--params", json.dumps(params_dict),
+            "--export", str(out_file)
+        ]
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        for line in proc.stdout.splitlines():
+            try:
+                data = json.loads(line)
+                if data.get("step") == "cmd" and data.get("command") == "imageTrace.makeAndExpand":
+                    res = data.get("result", {})
+                    anchors = res.get("anchors", 0)
+                    paths = res.get("paths", 0)
+            except Exception:
+                pass
+
+    elapsed_ms = (time.perf_counter() - t0) * 1000.0
 
     # Optional metric physical scaling injection for Browzwear VStitcher
     if target_width_mm and out_file.is_file():
