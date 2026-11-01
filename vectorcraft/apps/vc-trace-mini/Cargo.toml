@@ -15,6 +15,7 @@ workspace = true
 [dependencies]
 vectorcraft-trace = { workspace = true }
 vectorcraft-geom = { workspace = true }
+vectorcraft-pathops = { workspace = true }
 kurbo = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

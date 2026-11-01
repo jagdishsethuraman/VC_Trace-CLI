@@ -6043,6 +6043,7 @@ dependencies = [
  "serde",
  "serde_json",
  "vectorcraft-geom",
+ "vectorcraft-pathops",
  "vectorcraft-trace",
 ]
 

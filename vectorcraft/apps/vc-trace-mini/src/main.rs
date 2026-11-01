@@ -10,10 +10,12 @@ use std::path::Path;
 use std::process::ExitCode;
 use std::time::Instant;
 
-use kurbo::{BezPath, PathEl};
+use kurbo::{BezPath, Join, PathEl};
 use serde_json::{Value, json};
+use vectorcraft_geom::{FillRule, PathData};
+use vectorcraft_pathops::{offset_path, remove_redundant_points, simplify, smooth, unite_all};
 use vectorcraft_trace::{
-    Method, Mode, PRESET_NAMES, Raster, TraceParams, TraceResult, preset, trace,
+    Method, Mode, PRESET_NAMES, Raster, TraceParams, TraceResult, TracedPath, preset, trace,
 };
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -58,6 +60,13 @@ PARAMETER OVERRIDES:
         --snap                     Snap near-straight curves to lines & arcs to circles
         --gradients                Trace smooth color ramps as linear gradients
         --params <JSON>            Raw JSON parameter overrides
+
+CAD POST-PROCESSING & GEOMETRIC SHAPING:
+        --simplify <TOL>           Post-simplify curves (tolerance in pt, e.g. 0.5 or 1.0)
+        --smooth <AMOUNT>          Post-smooth curves towards Catmull-Rom tangents (0.0..1.0)
+        --clean                    Remove duplicate points and collinear anchors
+        --offset <DELTA>           Dilation/erosion (+px for bleed/seam allowance, -px for inset)
+        --unite-same-color         Boolean merge all shapes sharing the same color
 
 OUTPUT & DIAGNOSTICS:
         --json                     Output JSON summary of paths, anchors, timing and palette
@@ -267,6 +276,11 @@ fn run() -> Result<(), String> {
     let mut stroke_width_override: Option<f64> = None;
     let mut snap_override: Option<bool> = None;
     let mut gradients_override: Option<bool> = None;
+    let mut simplify_override: Option<f64> = None;
+    let mut smooth_override: Option<f64> = None;
+    let mut clean_override: bool = false;
+    let mut offset_override: Option<f64> = None;
+    let mut unite_override: bool = false;
     let mut json_params: Option<String> = None;
     let mut output_json = false;
 
@@ -358,6 +372,27 @@ fn run() -> Result<(), String> {
             }
             "--gradients" => {
                 gradients_override = Some(true);
+            }
+            "--simplify" => {
+                if let Some(v) = it.next().and_then(|s| s.parse().ok()) {
+                    simplify_override = Some(v);
+                }
+            }
+            "--smooth" => {
+                if let Some(v) = it.next().and_then(|s| s.parse().ok()) {
+                    smooth_override = Some(v);
+                }
+            }
+            "--clean" | "--remove-redundant" => {
+                clean_override = true;
+            }
+            "--offset" => {
+                if let Some(v) = it.next().and_then(|s| s.parse().ok()) {
+                    offset_override = Some(v);
+                }
+            }
+            "--unite-same-color" => {
+                unite_override = true;
             }
             "--params" => {
                 json_params = it.next().cloned();
@@ -466,8 +501,79 @@ fn run() -> Result<(), String> {
 
     // Execute trace
     let t_trace = Instant::now();
-    let result = trace(&raster, &params);
+    let mut result = trace(&raster, &params);
     let trace_ms = t_trace.elapsed().as_secs_f64() * 1000.0;
+    let raw_anchors = result.anchor_count();
+
+    // 1. Boolean unite shapes sharing the same color
+    if unite_override {
+        let mut color_groups: std::collections::BTreeMap<[u8; 3], Vec<usize>> = std::collections::BTreeMap::new();
+        for (idx, p) in result.paths.iter().enumerate() {
+            if p.stroke.is_none() && p.gradient.is_none() {
+                color_groups.entry(p.color).or_default().push(idx);
+            }
+        }
+
+        let mut new_paths = Vec::new();
+        let mut united_indices = std::collections::BTreeSet::new();
+
+        for (color, indices) in color_groups {
+            if indices.len() > 1 {
+                let path_refs: Vec<(&PathData, FillRule)> = indices
+                    .iter()
+                    .map(|&i| (&result.paths[i].path, FillRule::NonZero))
+                    .collect();
+                let united = unite_all(&path_refs);
+                if !united.is_empty() {
+                    let total_px: usize = indices.iter().map(|&i| result.paths[i].pixels).sum();
+                    new_paths.push(TracedPath {
+                        path: united,
+                        color,
+                        pixels: total_px,
+                        stroke: None,
+                        shape: None,
+                        gradient: None,
+                        square_caps: false,
+                    });
+                    united_indices.extend(indices);
+                }
+            }
+        }
+        for (idx, p) in result.paths.into_iter().enumerate() {
+            if !united_indices.contains(&idx) {
+                new_paths.push(p);
+            }
+        }
+        result.paths = new_paths;
+    }
+
+    // 2. Path dilation / erosion (offset)
+    if let Some(delta) = offset_override {
+        for p in &mut result.paths {
+            p.path = offset_path(&p.path, delta, Join::Round, 4.0);
+        }
+    }
+
+    // 3. Curve smoothing towards Catmull-Rom tangents
+    if let Some(amt) = smooth_override {
+        for p in &mut result.paths {
+            p.path = smooth(&p.path, amt);
+        }
+    }
+
+    // 4. Anchor point simplification
+    if let Some(tol) = simplify_override {
+        for p in &mut result.paths {
+            p.path = simplify(&p.path, tol);
+        }
+    }
+
+    // 5. Clean duplicate and collinear points
+    if clean_override {
+        for p in &mut result.paths {
+            p.path = remove_redundant_points(&p.path, 0.1);
+        }
+    }
 
     // Render SVG
     let svg = render_svg(&result, raster.width, raster.height);
@@ -488,7 +594,9 @@ fn run() -> Result<(), String> {
             "width": raster.width,
             "height": raster.height,
             "pathCount": result.paths.len(),
+            "rawAnchorCount": raw_anchors,
             "anchorCount": result.anchor_count(),
+            "reducedAnchors": raw_anchors.saturating_sub(result.anchor_count()),
             "palette": palette_hex,
             "preset": preset_name,
             "timing": {
@@ -508,10 +616,11 @@ fn run() -> Result<(), String> {
             .map_err(|e| format!("Failed to write SVG to '{out_file}': {e}"))?;
         if !output_json {
             eprintln!(
-                "✓ Vectorized in {:.1}ms ({} paths, {} anchors) -> {}",
+                "✓ Vectorized in {:.1}ms ({} paths, {} anchors, raw: {}) -> {}",
                 total_ms,
                 result.paths.len(),
                 result.anchor_count(),
+                raw_anchors,
                 out_file
             );
         }

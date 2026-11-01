@@ -73,6 +73,11 @@ def trace_for_vstitcher(
     stroke_width: float = 10.0,
     noise: int = 10,
     target_width_mm: float = None,
+    simplify: float = None,
+    smooth: float = None,
+    clean: bool = False,
+    offset: float = None,
+    unite_same_color: bool = False,
 ) -> dict:
     """
     Vectorize artwork for Browzwear VStitcher.
@@ -129,6 +134,16 @@ def trace_for_vstitcher(
             cmd.append("--snap")
         if strokes:
             cmd.extend(["--strokes", "--stroke-width", str(float(stroke_width))])
+        if simplify is not None:
+            cmd.extend(["--simplify", str(float(simplify))])
+        if smooth is not None:
+            cmd.extend(["--smooth", str(float(smooth))])
+        if clean:
+            cmd.append("--clean")
+        if offset is not None:
+            cmd.extend(["--offset", str(float(offset))])
+        if unite_same_color:
+            cmd.append("--unite-same-color")
 
         proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
         try:
@@ -217,6 +232,11 @@ def main():
     parser.add_argument("--centerline", action="store_true", help="Centerline stroked tracing for lines/embroidery")
     parser.add_argument("--stroke-width", type=float, default=10.0, help="Centerline stroke width (px)")
     parser.add_argument("--width-mm", type=float, help="Target physical garment artwork width in mm")
+    parser.add_argument("--simplify", type=float, help="Curve simplification tolerance (pt, e.g. 0.5, 1.0)")
+    parser.add_argument("--smooth", type=float, help="Curve smoothing amount (0.0..1.0)")
+    parser.add_argument("--clean", action="store_true", help="Remove collinear and duplicate anchors")
+    parser.add_argument("--offset", type=float, help="Offset path (+px dilation/bleed, -px inset)")
+    parser.add_argument("--unite", action="store_true", help="Boolean union merge same-color shapes into compound paths")
 
     args = parser.parse_args()
 
@@ -231,6 +251,11 @@ def main():
             strokes=args.centerline,
             stroke_width=args.stroke_width,
             target_width_mm=args.width_mm,
+            simplify=args.simplify,
+            smooth=args.smooth,
+            clean=args.clean,
+            offset=args.offset,
+            unite_same_color=args.unite,
         )
         print("\n" + "=" * 55)
         print("  ⚡ VStitcher Artwork Vectorization Complete")
