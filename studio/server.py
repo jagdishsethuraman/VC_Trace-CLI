@@ -55,7 +55,7 @@ def get_vectorcraft_bin():
 
 def run_vectorcraft(image_bytes, preset="Flat Logo", colors=8, ignore_white=True,
                     method="overlapping", shapes=True, snap_curves=True,
-                    strokes=False, stroke_width=10, noise=10):
+                    strokes=False, stroke_width=10, noise=10, simplify=None):
     """Execute VectorCraft native Rust vectorizer via headless CLI."""
     bin_path, is_mini = get_vectorcraft_bin()
     if not bin_path:
@@ -79,6 +79,7 @@ def run_vectorcraft(image_bytes, preset="Flat Logo", colors=8, ignore_white=True
     try:
         anchors = 0
         paths = 0
+        raw_anchors = 0
 
         if is_mini:
             cmd = [
@@ -101,11 +102,14 @@ def run_vectorcraft(image_bytes, preset="Flat Logo", colors=8, ignore_white=True
                 cmd.append("--snap")
             if strokes:
                 cmd.extend(["--strokes", "--stroke-width", str(float(stroke_width))])
+            if simplify is not None and float(simplify) > 0.0:
+                cmd.extend(["--simplify", str(float(simplify))])
 
             proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
             try:
                 meta = json.loads(proc.stdout)
                 anchors = meta.get("anchorCount", 0)
+                raw_anchors = meta.get("rawAnchorCount", anchors)
                 paths = meta.get("pathCount", 0)
             except Exception:
                 pass
@@ -164,6 +168,7 @@ def run_vectorcraft(image_bytes, preset="Flat Logo", colors=8, ignore_white=True
             "svg_bytes": len(svg_content.encode("utf-8")),
             "path_count": paths or svg_content.count("<path"),
             "anchor_count": anchors,
+            "raw_anchor_count": raw_anchors if raw_anchors else anchors,
             "segment_count": total_segments,
             "engine": "vectorcraft",
         }
@@ -474,6 +479,7 @@ class VectorizerHandler(BaseHTTPRequestHandler):
                     strokes=vc_strokes,
                     stroke_width=vc_stroke_width,
                     noise=vc_noise,
+                    simplify=simplify,
                 )
                 res["raster_width"] = w
                 res["raster_height"] = h
